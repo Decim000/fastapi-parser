@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from environ import Env
 
-from .saver_utils import clear_tender_number
+from .filesaver_service.saver_utils import clear_tender_number
 
 env = Env()
 Env.read_env()

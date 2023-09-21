@@ -20,7 +20,7 @@ async def generate_url(params):
     price_max = params.get("maxPrice")
     supplier_definition = params.get("supplier")
 
-    if not (date_min and date_max):
+    if not date_min and not date_max:
         date_min = (datetime.now() - relativedelta(years=1)).strftime("%d.%m.%Y")
         date_max = datetime.now().strftime("%d.%m.%Y")
 
@@ -78,7 +78,7 @@ async def generate_url(params):
     if (
         (supplier_definition != [])
         and (supplier_definition != [""])
-        and (supplier_definition != None)
+        and (supplier_definition is not None)
         and (supplier_definition != [None])
     ):
         if not all(elem in supplier_definition for elem in list(supplier_names.keys())):
@@ -88,14 +88,14 @@ async def generate_url(params):
                     for sup in supplier_definition:
                         try:
                             supplier_url += supplier_names.get(sup).get("fz44") + "%"
-                        except:
+                        except Exception:
                             pass
                     supplier_url += "&selectedLaws=FZ44"
                 if "223-ФЗ" in law_type:
                     for sup in supplier_definition:
                         try:
                             supplier_url += supplier_names.get(sup).get("fz223") + "%"
-                        except:
+                        except Exception:
                             pass
                     supplier_url += "&selectedLaws=FZ223"
 
@@ -105,19 +105,19 @@ async def generate_url(params):
         pass
 
     if (
-        (price_list == [])
+        (not price_list)
         and (price_list == [""])
-        and (price_list != None)
+        and (price_list is not None)
         and (price_list != [[], []])
     ):
         price_url = ""
     else:
         price_keys = ["&priceFromGeneral=", "&priceToGeneral="]
         for i, price in enumerate(price_list):
-            if price != None:
+            if price is not None:
                 date_url += price_keys[i] + price
 
-    if (date_list == []) and (date_list == [""]) and (date_list != None):
+    if (not date_list) and (date_list == [""]) and (date_list is not None):
         date_url = ""
     else:
         print(date_list)

@@ -4,89 +4,92 @@ import logging
 import re
 
 from tenderchad_scraper.items import TenderItem
-from tenderchad_scraper.saver_service import FileSaver
 from tenderchad_scraper.utils import handle_bytes
-from tenderchad_scraper.title_handler import rename_title
+from tenderchad_scraper.title_util import rename_title
 
 
 class ZakupkiSpider(scrapy.Spider):
     name = "ZakupkiSpider"
 
-    # def __init__(self, dynamic_value=None, *args, **kwargs):
-    #     super(ZakupkiSpider, self).__init__(*args, **kwargs)
-    #     self.dynamic_value = dynamic_value
-
-    # def start_requests(self):
-    #     url = f"https://https://zakupki.gov.ru/epz/order/extendedsearch/results.html?{self.dynamic_value}"  # Используйте dynamic_value в ссылке
-    #     logger = logging.getLogger('spam_application')
-    #     logger.setLevel(logging.DEBUG)
-    #     # create file handler which logs even debug messages
-    #     fh = logging.FileHandler('spam.log')
-    #     fh.setLevel(logging.DEBUG)
-    #     logger.addHandler(fh)
-    #     logger.info(url)
-    #     yield scrapy.Request(url, self.parse)
 
     def parse(self, response):
-        # Ваш код для обработки ответа
+        """ Entrypoint for starting parsing with this spider.
+        Collects info from each card on page from from zakupki.gov
+        Info: number, placement date, end date, law, price, stage, link to tender-related documents, extended supplier definition method (if provided).
+
+        Args:
+            response (Response): Neccessary var for framework
+
+        Yields:
+            Request: Request to function collecting tender's extended info from main page.
+        """        
         __URL_BASE = "https://zakupki.gov.ru"
         logging.info('в поисках тендеров')
+
+        # cards pf tenders
         headers = response.css("div.search-registry-entry-block.box-shadow-search-input")
+
         if headers:
-            
             for header in headers:
+                # get Tender item to store info
                 tender = TenderItem()
+
+                # get tender number
                 try:
-                    # tender['number'] = header.css('div.registry-entry__header-mid__number').css('a *::text').get()
                     number = header.xpath('//div[@class="registry-entry__header-mid__number"]/*//text()[normalize-space()]').getall()
                     if type(number) is list:
                         tender['number'] = ''.join(number)
                     else:
                         tender['number'] = number
-                except:
+                except Exception:
                     tender['number'] = None
                 
+                # get date of placing tender 
                 try:
                     tender['date_placed'] = header.xpath("//div[contains(text(), 'Размещено')]/following-sibling::div[1]/text()").get()
-                except:
+                except Exception:
                     tender['date_placed'] = None
                 
+                # get date when tender will be expired
                 try:
                     tender['date_end'] = header.xpath("//div[contains(text(), 'Окончание подачи заявок')]/following-sibling::div[1]/text()").get()
-                except:
+                except Exception:
                     tender['date_end'] = None
                 
+                # get full price of the tender
                 try:
                     tender['price'] = header.css('div.price-block__value::text').get()
-                except:
+                except Exception:
                     tender['price'] = 0
 
+                # get current stage of the tender
                 try:
                     tender['stage'] = header.css('div.registry-entry__header-mid__title.text-normal::text').get()
-                except:
+                except Exception:
                     tender['stage'] = 'Закупка отменена'
 
+                # get link to documents of the tender
                 try:
                     tender['docs'] = header.css("div.registry-entry__header-mid__number").css('a::attr(href)').extract()[0]
-                except:
+                except Exception:
                     tender['docs']=''
-                # logging.info('tender has info -')
-                # logging.info(tender)
 
+                # get law type
                 try:
                     law = header.css("div.col-9.p-0.registry-entry__header-top__title.text-truncate::text").get()
                     tender['law'] = re.search(r'\d+-ФЗ', law.strip()).group(0)
-                except:
+                except Exception:
                     tender['law'] = None
                 
-                if tender['law'] is not None:
+                # if law is specified, can extract extended name of supplier definition method
+                if tender.get('law') is not None:
                     try:
                         tender['supplier_extended']  = law.replace(tender['law'], "").replace('\n', '').strip()
                         
-                    except:
+                    except Exception:
                         pass
-
-                
+        
+                # route further scraping
                 if tender['law'] == "44-ФЗ":
                     request = scrapy.Request(url=__URL_BASE+tender['docs'], callback=self.parse_fullpage_44)
                     request.meta['tender'] = tender
@@ -97,30 +100,58 @@ class ZakupkiSpider(scrapy.Spider):
                     request.meta['tender'] = tender
                     yield request
 
+    def parse_fullpage_223(self, response):
+        """ Function for scraping extended info from 223-FZ-tender's page.
+
+        Args:
+            response (scrapy.Response): Neccessary arg for framework
+        """        
+        pass
 
     def parse_fullpage_44(self, response):
+        """ Function for scraping extended info from 44-FZ-tender's page.
+        Info: law (if was None), supplier, law_and_supplier, customer, platform, platform URL, deadline, summing up date, contract enforcement amount.
+        Summing up date is field for calculating deadline with (deadline date - summing up date).
 
+        Args:
+            response (scrapy.Response): Neccessary arg for framework
+
+        Raises:
+            Exception: exception
+
+        Yields:
+            scrapy.Request: Request to function for downloading docs
+        """        
+
+        # retrieve TenderInfo object to continue storing data
         tender = response.meta.get('tender')
+
+        # if couldn't get law from card
         try:
+            # try to retrieve law 
             if not tender.get('law'):
                 tender['law'] = response.css('div.cardMainInfo__title.d-flex.text-truncate::text').get()
                 if tender['law'] is None:
                     raise Exception
-        except:
+        # try to get string containing both law and supplier as they are in the same element
+        except Exception:
             tender['law_and_supplier'] = response.css('div.registry-entry__header-top__title::text').get()
 
+        # if could't collect both law and supplier, law and supplier are in separate elements
         if not tender.get('law_and_supplier'):
             tender['supplier'] = response.css('span.cardMainInfo__title.distancedText.ml-1::text').get()
 
+        # two ways for extracting description
         try:
             tender['description'] = response.xpath("//span[contains(text(), 'Объект закупки')]/following-sibling::span[1]/text()").get()
             if tender['description'] is None:
                 tender['description'] = response.xpath("//div[contains(text(), 'Объект закупки')]/following-sibling::span[1]/text()").get()
 
-        except Exception as e:
-            logging.info(e)
+        except Exception as exception:
+            logging.info(exception)
             tender['description'] = ''
 
+        # three ways for extracting customer's name
         try:
             tender['customer'] = response.xpath('//div[@class="cardMainInfo__section"]/span[contains(text(), "Организация, осуществляющая размещение")]/following-sibling::span[1]/a/text()').get()
             
@@ -128,26 +159,30 @@ class ZakupkiSpider(scrapy.Spider):
                 tender['customer'] = response.xpath('//div[@class="sectionMainInfo__body"]/*/span[contains(text(), "Заказчик")]/following-sibling::span[1]/*/text()').get()
             if tender['customer'] is None:
                 tender['customer'] = response.xpath('//div[@class="registry-entry__body-title" and contains(text(), "Заказчик")]/following-sibling::div/*/text()').get()
-        except:
+        except Exception:
             tender['customer'] = ""
 
+        # get tender origin plaform name 
         try:
             tender['platform'] =  response.xpath('//section[@class="blockInfo__section section"]/span[contains(text(), "Наименование электронной")]/following-sibling::span[1]/text()').get()
-        except:
+        except Exception:
             tender['platform'] = ""
 
+        # get URL of this platform
         try:
             tender['platform_url'] = response.xpath('//section[@class="blockInfo__section section"]/span[contains(text(), "Адрес электронной площадки")]/following-sibling::span[1]/*/text()').get()
-        except:
+        except Exception:
             tender['platform_url'] = ""
 
+        # try to get deadline of the tender. Can collect date or days
         try:
             tender['deadline'] = response.xpath('//section[@class="blockInfo__section"]/span[contains(text(), "Срок исполнения контракта")]/following-sibling::span[1]/text()').get()
             if tender['deadline'] is None:
                 tender['deadline'] = response.xpath('//section[@class="blockInfo__section"]/span[contains(text(), "Сроки поставки товара")]/following-sibling::span[1]/text()').get()
-        except:
+        except Exception:
             tender['deadline'] = ''
 
+        # support field to get summing up date
         try:
             for variation in [
                         "Дата подведения итогов",
@@ -161,31 +196,30 @@ class ZakupkiSpider(scrapy.Spider):
                 if date_summing_up is not None:
                     tender['date_summing_up'] = date_summing_up
                     break
-        except:
+        except Exception:
             tender['date_summing_up'] = ""
 
+        # get contract enforcement amount
         try:
             tender['contract_enforcement'] = response.xpath('//section[@class="blockInfo__section section"]/span[@class="section__title" and contains(text(), "Размер обеспечения исполнения")]/following-sibling::span[1]/text()').get()
-        except:
+        except Exception:
             tender['contract_enforcement'] = 0
 
-        # logging.info('tender has info -')
-        # logging.info(tender)
-
+        # run downloading the docs
         request = scrapy.Request(url=response.request.url.replace("common-info", "documents"), callback=self.parse_docs)
         request.meta['tender'] = tender
         yield request
-        # logging.info(tender)
-            
-        # pages = response.css("ul.pages::text").get()
-        # last_page = pages.pop()
-        # logging.info("last page number: "+last_page)
-        # print("last page number: "+last_page)
-        # pass
-    
+
+
     def parse_docs(self, response):
+        """_summary_
+
+        Args:
+            response (_type_): _description_
+        """        
         tender = response.meta.get('tender')
 
+        # dict for storing documents {'doc_name': url}
         docs = {}
 
         for variation in [
@@ -196,11 +230,12 @@ class ZakupkiSpider(scrapy.Spider):
         "Документация по закупке",
     ]:
             attachments_list = response.xpath('//div[@class="col-sm-12 blockInfo"]/h2[contains(text(), "{}")]/following-sibling::div[2]/div[@class="col-sm-6"]/div/*[contains(text(), "Прикрепленные файлы")]/following-sibling::div'.format(variation))
-            logging.warning(f"attachments_list is type of {type(attachments_list)}")
+            
             if attachments_list.attrib == {}:
                 attachments_list = response.xpath('//div[@class="col-sm-12 blockInfo"]/h2[contains(text(), "{}")]/following-sibling::div[1]/div[@class="col-sm-6"]/div/*[contains(text(), "Прикрепленные файлы")]/following-sibling::div'.format(variation))
+            
             if attachments_list:
-                
+               # get titles and links
                 for attachment in attachments_list:
                     link = attachment.xpath('.//div/span/a/@href').get()
                     title = attachment.xpath('.//div/span/a/@title').get()
@@ -210,13 +245,21 @@ class ZakupkiSpider(scrapy.Spider):
 
                 break
 
+        # list containing all files, including files from rar- and zi-archives
+        all_attached_files = []
+
         for title, url in docs.items():
             resp = requests.get(url,  headers={'User-Agent': 'Custom'})
             if resp.status_code == 200:
+                # working with file's payload to save
+                attached_files = handle_bytes(resp, title, tender['number'])
+                all_attached_files.append(attached_files)
+                logging.warning(all_attached_files)
 
-                handle_bytes(resp, title, tender['number'])
             else:
                 logging.warning(f"something went wrong on {url}")
+
+        tender['all_attached_files'] = all_attached_files
                     
         return tender
 

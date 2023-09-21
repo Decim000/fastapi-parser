@@ -65,6 +65,7 @@ ROBOTSTXT_OBEY = True
 ITEM_PIPELINES = {
     'tenderchad_scraper.pipelines.HeaderClearDataPipeline': 300,
     'tenderchad_scraper.pipelines.FullpageClearDataPipeline': 400,
+    'tenderchad_scraper.pipelines.DocsClearDataPipeline': 500,
     # 'tenderchad_scraper.pipelines.SaveDocPipeline': 500,
 }
 

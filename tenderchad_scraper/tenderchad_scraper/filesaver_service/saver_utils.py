@@ -4,7 +4,7 @@ import aspose.words as aw
 
 from pathlib import Path
 
-from .title_handler import rename_title
+from tenderchad_scraper.title_util import rename_title
 
 def convert_doc_to_docx(tender_document_path: str) -> str:
     """Get .doc version of file and saves copy in .docx format.
@@ -30,8 +30,16 @@ def convert_doc_to_docx(tender_document_path: str) -> str:
     return docx_path
 
 def clear_tender_number(number):
+    """Remove all unnecessary symbols to numbers only.
+
+    Args:
+        number (str): Number of the tender
+
+    Returns:
+        str: Number
+    """
     try:
         clean_number = re.findall(r'\d+', number)[0]
-        return clean_number if clean_number != [] else number 
+        return clean_number if clean_number != [] else number
     except:
         return number

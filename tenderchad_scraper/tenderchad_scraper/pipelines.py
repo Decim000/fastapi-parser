@@ -7,7 +7,8 @@
 # useful for handling different item types with a single interface
 
 import re
-from docx import Document
+import logging
+
 from datetime import datetime, timedelta
 
 
@@ -27,16 +28,16 @@ class HeaderClearDataPipeline:
                 price = price[0]
             try:
                 price = price.strip()
-            except:
+            except Exception:
                 pass
             try:
                 price = price.replace(u'\xa0', u'').replace(" ", "")
-            except:
+            except Exception:
                 pass
 
             try:
                 price = re.search(r'[\d.,]+', price).group(0)
-            except:
+            except Exception:
                 pass
 
             item['price'] = price
@@ -87,7 +88,7 @@ class FullpageClearDataPipeline:
 
         if item.get('platform_url') is not None:
             item['platform_url'] = item['platform_url'].strip()
-        else: 
+        else:
             item['platform_url'] = ""
         
         if item.get('deadline') is not None:
@@ -95,29 +96,51 @@ class FullpageClearDataPipeline:
 
             try:
                 item['deadline'] = re.search(r'\d+\.\d+\.\d+', item['deadline']).group(0)
-            except:
+            except Exception:
                 try:
                     item['deadline'] = re.search(r'\d+', item['deadline']).group(0)
-                except:
+                except Exception:
                     pass
 
                 pass
-        else: 
+        else:
             item['deadline'] = ""
 
         if item.get('date_summing_up') is not None:
             item['date_summing_up'] = item['date_summing_up'].strip()
-        else: 
+        else:
             item['date_summing_up'] = ""
             
         if item.get('contract_enforcement') is not None and type(item.get('contract_enforcement')) is not int:
             contract_enforcement = item['contract_enforcement'].strip().replace(u'\xa0', '')
             contract_enforcement = re.findall(r'\d+', contract_enforcement)
             item['contract_enforcement'] = contract_enforcement[0]
-            # if contract_enforcement := re.findall(r'(?:\d+\.)?\d+', item['contract_enforcement'])[0]:
-            #     item['contract_enforcement'] = float(contract_enforcement)
+
         else: 
             item['contract_enforcement'] = 0
 
         return item
     
+class DocsClearDataPipeline:
+
+    def process_item(self, item, spider):
+
+        if item.get('all_attached_files') is not None:
+            docs = item.get('all_attached_files')
+            flat_docs = self.flatten_and_remove_empty(docs)
+
+            logging.warning(flat_docs)
+            
+            item['all_attached_files'] = flat_docs
+
+        return item
+
+    def flatten_and_remove_empty(self, input_list):
+        result = []
+        for item in input_list:
+            if isinstance(item, list):
+                # Recursively flatten the nested list
+                result.extend(self.flatten_and_remove_empty(item))
+            elif item:  # Only add non-empty elements
+                result.append(item)
+        return result
