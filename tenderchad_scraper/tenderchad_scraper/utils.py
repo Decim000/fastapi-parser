@@ -18,7 +18,7 @@ def handle_bytes(response, title: str, number: str) -> list:
     Returns:
         list: All collected filenames
     """
-    logging.warning("i have a silly thing to say")
+    logging.warning("start scraping...")
     
     number = clear_tender_number(number)
     # make temp/number folder
