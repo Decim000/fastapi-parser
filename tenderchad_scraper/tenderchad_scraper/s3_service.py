@@ -4,15 +4,10 @@ import logging
 from pathlib import Path
 from environ import Env
 
+from tenderchad_scraper.settings import AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DOCS_FOLDER, AWS_STORAGE_BUCKET_NAME
+
 from .filesaver_service.saver_utils import clear_tender_number
 
-env = Env()
-Env.read_env()
-
-AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY = env("AWS_SECRET_ACCESS_KEY")
-AWS_STORAGE_BUCKET_NAME = env("AWS_STORAGE_BUCKET_NAME")
-AWS_DOCS_FOLDER = env("AWS_DOCS_FOLDER")
 
 client = boto3.client(
         "s3",

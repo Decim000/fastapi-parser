@@ -1,7 +1,7 @@
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
-async def generate_url(params):
+def generate_url(params, use_it_okpd=True):
     """Function that generates URL according to preferences for "zakupki.gov.ru" site.
 
     Args:
@@ -30,6 +30,7 @@ async def generate_url(params):
     basic_url = "https://zakupki.gov.ru/epz/order/extendedsearch/results.html?"
     search_url = "searchString="
     url_tail = "&morphology=on&pageNumber=1&sortDirection=false&recordsPerPage=_&showLotsInfoHidden=false&sortBy=UPDATE_DATE&currencyIdGeneral=-1"
+    okpd_it = "&okpd2Ids=8874161%2C8874706%2C8874707%2C8876110%2C8879022%2C8879023%2C8890621%2C8890622%2C8876111%2C8879024%2C8879025%2C8890623%2C8890624%2C8879026%2C8876112%2C8890625%2C8876113%2C8879027%2C8890626%2C8890627%2C8890628%2C8890629%2C8890630%2C8876114%2C8879028%2C8890631%2C8874708%2C8876115%2C8879030%2C8879029%2C8890632%2C8890633%2C8890634%2C8890635%2C8890636%2C8874709%2C8876116%2C8876117%2C8879031%2C8890637%2C8879032%2C8890638%2C8890639%2C8890640&okpd2IdsCodes=62.0%2C62.01%2C62.02%2C62.01.1"
     law_url = ""
     stage_url = ""
     price_url = ""
@@ -64,16 +65,19 @@ async def generate_url(params):
         },
     }
     actuality_status = True
-    if (stages != []) and (stages != [""]) and (stages != None):
-        for stage in stages:
-            if (stage in s for s in stage_names.keys()):
-                stage_url += stage_names.get(stage)
+    
 
     print(actuality_status)
-    if (law_type != []) and (law_type != [""]) and (law_type != None):
+    if (law_type != []) and (law_type != [""]) and (law_type is not None):
+        print(law_type)
         for law in law_type:
             if (law in s for s in fz_names.keys()):
                 law_url += fz_names.get(law)
+
+    if (stages != []) and (stages != [""]) and (stages is not None):
+        for stage in stages:
+            if (stage in s for s in stage_names.keys()):
+                stage_url += stage_names.get(stage)
 
     if (
         (supplier_definition != [])
@@ -137,5 +141,9 @@ async def generate_url(params):
         + price_url
         + date_url
     )
+    
+    if use_it_okpd:
+       generated_url += okpd_it
+
     print(generated_url)
     return generated_url

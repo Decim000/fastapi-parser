@@ -2,15 +2,33 @@ import requests
 import scrapy
 import logging
 import re
+import psycopg2
+
+from scrapy.crawler import CrawlerProcess
+from scrapy.utils.project import get_project_settings
 
 from tenderchad_scraper.items import TenderItem
 from tenderchad_scraper.utils import handle_bytes
 from tenderchad_scraper.title_util import rename_title
+from utils import generate_url
+from tenderchad_scraper.settings import DATABASE_NAME, DATABASE_PASSWORD, DATABASE_USER, DATABASE_HOST, AWS_DOCS_FOLDER, AWS_DOCS 
 
 
 class ZakupkiSpider(scrapy.Spider):
     name = "ZakupkiSpider"
+    
+    custom_settings = {
+        "ITEM_PIPELINES": {'tenderchad_scraper.pipelines.HeaderClearDataPipeline': 300,
+                            'tenderchad_scraper.pipelines.FullpageClearDataPipeline': 400,
+                            'tenderchad_scraper.pipelines.DocsClearDataPipeline': 500,
+                            'tenderchad_scraper.pipelines.PostgresPipeline': 1000,
+                            },
+                        }
 
+    # def __init__(self, *args, **kwargs): 
+    #   super(ZakupkiSpider, self).__init__(*args, **kwargs) 
+
+    #   self.start_urls = [kwargs.get('start_url')] 
 
     def parse(self, response):
         """ Entrypoint for starting parsing with this spider.
@@ -30,13 +48,17 @@ class ZakupkiSpider(scrapy.Spider):
         headers = response.css("div.search-registry-entry-block.box-shadow-search-input")
 
         if headers:
-            for header in headers:
+            for i, header in enumerate(headers):
                 # get Tender item to store info
-                tender = TenderItem()
+                # tender = TenderItem()
 
                 # get tender number
+                tender = {}
                 try:
-                    number = header.xpath('//div[@class="registry-entry__header-mid__number"]/*//text()[normalize-space()]').getall()
+                    number = header.xpath('//div[@class="registry-entry__header-mid__number"]/*//text()[normalize-space()]').getall()[i]
+                    if not re.search(r'\d+', number):
+                        number = header.xpath('//div[@class="registry-entry__header-mid__number"]/*/*/text()[normalize-space()]').getall()[i]
+                    print(f'Number of tender: {number}')
                     if type(number) is list:
                         tender['number'] = ''.join(number)
                     else:
@@ -91,14 +113,15 @@ class ZakupkiSpider(scrapy.Spider):
         
                 # route further scraping
                 if tender['law'] == "44-ФЗ":
-                    request = scrapy.Request(url=__URL_BASE+tender['docs'], callback=self.parse_fullpage_44)
+                    request = response.follow(url=__URL_BASE+tender['docs'], callback=self.parse_fullpage_44)
                     request.meta['tender'] = tender
                     yield request
 
                 if tender['law'] == "223-ФЗ":
-                    request = scrapy.Request(url=__URL_BASE+tender['docs'], callback=self.parse_fullpage_223)
+                    request = response.follow(url=__URL_BASE+tender['docs'], callback=self.parse_fullpage_223)
                     request.meta['tender'] = tender
                     yield request
+
 
     def parse_fullpage_223(self, response):
         """ Function for scraping extended info from 223-FZ-tender's page.
@@ -106,7 +129,115 @@ class ZakupkiSpider(scrapy.Spider):
         Args:
             response (scrapy.Response): Neccessary arg for framework
         """        
-        pass
+        # retrieve TenderInfo object to continue storing data
+        tender_dict = response.meta.get('tender')
+
+        tender = TenderItem()
+
+        tender['number'] = tender_dict['number']
+        tender['date_placed'] = tender_dict['date_placed']
+        tender['date_end'] = tender_dict['date_end']
+        tender['price'] = tender_dict['price']
+        tender['stage'] = tender_dict['stage']
+        tender['docs'] = tender_dict['docs']
+        tender['law'] = tender_dict['law']
+        # if couldn't get law from card
+        try:
+            # try to retrieve law 
+            if not tender.get('law'):
+                tender['law'] = response.css('div.cardMainInfo__title.d-flex.text-truncate::text').get()
+                if tender['law'] is None:
+                    raise Exception
+        # try to get string containing both law and supplier as they are in the same element
+        except Exception:
+            tender['law_and_supplier'] = response.xpath('//div[@class="registry-entry__header-top__title"]/text()').get()
+
+        if not tender.get('law_and_supplier'):
+            tender['law_and_supplier'] = response.xpath('//div[@class="registry-entry__header-top__title"]/text()').get()
+
+
+        # if could't collect both law and supplier, law and supplier are in separate elements
+        if not tender.get('law_and_supplier'):
+            tender['supplier'] = response.css('span.cardMainInfo__title.distancedText.ml-1::text').get()
+
+        # two ways for extracting description
+        try:
+            tender['description'] = response.xpath("//span[contains(text(), 'Объект закупки')]/following-sibling::span[1]/text()").get()
+            if tender['description'] is None:
+                tender['description'] = response.xpath("//div[contains(text(), 'Объект закупки')]/following-sibling::span[1]/text()").get()
+                if tender['description'] is None:
+                    tender['description'] = response.xpath("//div[@class='registry-entry__body-value']/text()").get()
+        except Exception as exception:
+            logging.info(exception)
+            tender['description'] = ''
+
+        # three ways for extracting customer's name
+        try:
+            tender['customer'] = response.xpath('//div[@class="cardMainInfo__section"]/span[contains(text(), "Организация, осуществляющая размещение")]/following-sibling::span[1]/a/text()').get()
+            
+            if tender['customer'] is None:
+                tender['customer'] = response.xpath('//div[@class="sectionMainInfo__body"]/*/span[contains(text(), "Заказчик")]/following-sibling::span[1]/*/text()').get()
+            if tender['customer'] is None:
+                tender['customer'] = response.xpath('//div[@class="registry-entry__body-title" and contains(text(), "Заказчик")]/following-sibling::div/*/text()').get()
+        except Exception:
+            tender['customer'] = ""
+
+        # get tender origin plaform name 
+        try:
+            tender['platform'] =  response.xpath('//section[@class="blockInfo__section section"]/span[contains(text(), "Наименование электронной")]/following-sibling::span[1]/text()').get()
+            if tender['platform'] is None:
+                tender['platform'] =  response.xpath('//div[contains(text(), "Наименование электронной")]/following-sibling::div/text()').get()
+        except Exception:
+            tender['platform'] = ""
+
+        # get URL of this platform
+        try:
+            tender['platform_url'] = response.xpath('//section[@class="blockInfo__section section"]/span[contains(text(), "Адрес электронной площадки")]/following-sibling::span[1]/*/text()').get()
+            if tender['platform_url'] is None:
+                tender['platform_url'] = response.xpath('//div[contains(text(), "Адрес электронной")]/following-sibling::div/*/text()').get()
+        except Exception:
+            tender['platform_url'] = ""
+
+        # try to get deadline of the tender. Can collect date or days
+        try:
+            tender['deadline'] = response.xpath('//section[@class="blockInfo__section"]/span[contains(text(), "Срок исполнения контракта")]/following-sibling::span[1]/text()').get()
+            if tender['deadline'] is None:
+                tender['deadline'] = response.xpath('//section[@class="blockInfo__section"]/span[contains(text(), "Сроки поставки товара")]/following-sibling::span[1]/text()').get()
+        except Exception:
+            tender['deadline'] = ''
+
+        # support field to get summing up date
+        try:
+            for variation in [
+                        "Дата подведения итогов",
+                        "Дата начала исполнения контракта",
+                        "Дата и время проведения закрытого аукциона",
+                        "Дата и время окончания подачи котировочных заявок",
+                    ]:
+                date_summing_up = response.xpath('//section[@class="blockInfo__section"]/span[@class="section__title" and contains(text(), "{}")]/following-sibling::span[1]/text()'.format(variation)).get()
+                if date_summing_up is None:
+                    date_summing_up = response.xpath('//div[@class="col-9 mr-auto"]/div[@class="common-text__title" and contains(text(), "{}")]/following-sibling::div[1]/text()'.format(variation)).get()
+                if date_summing_up is not None:
+                    tender['date_summing_up'] = date_summing_up
+                    break
+        except Exception:
+            tender['date_summing_up'] = ""
+
+        # get contract enforcement amount
+        try:
+            tender['contract_enforcement'] = response.xpath('//section[@class="blockInfo__section section"]/span[@class="section__title" and contains(text(), "Размер обеспечения исполнения")]/following-sibling::span[1]/text()').get()
+        except Exception:
+            tender['contract_enforcement'] = 0
+
+        # run downloading the docs
+        request = scrapy.Request(url=response.request.url.replace("common-info", "documents"), callback=self.parse_docs)
+        request.meta['tender'] = tender
+        yield request
+
+        # tender['all_attached_files'] = None
+
+        # return tender
+
 
     def parse_fullpage_44(self, response):
         """ Function for scraping extended info from 44-FZ-tender's page.
@@ -124,7 +255,18 @@ class ZakupkiSpider(scrapy.Spider):
         """        
 
         # retrieve TenderInfo object to continue storing data
-        tender = response.meta.get('tender')
+        # tender = response.meta.get('tender')
+        tender_dict = response.meta.get('tender')
+
+        tender = TenderItem()
+
+        tender['number'] = tender_dict['number']
+        tender['date_placed'] = tender_dict['date_placed']
+        tender['date_end'] = tender_dict['date_end']
+        tender['price'] = tender_dict['price']
+        tender['stage'] = tender_dict['stage']
+        tender['docs'] = tender_dict['docs']
+        tender['law'] = tender_dict['law']
 
         # if couldn't get law from card
         try:
@@ -146,7 +288,8 @@ class ZakupkiSpider(scrapy.Spider):
             tender['description'] = response.xpath("//span[contains(text(), 'Объект закупки')]/following-sibling::span[1]/text()").get()
             if tender['description'] is None:
                 tender['description'] = response.xpath("//div[contains(text(), 'Объект закупки')]/following-sibling::span[1]/text()").get()
-
+                if tender['description'] is None:
+                    tender['description'] = response.xpath("/html/body/div[2]/div/div[1]/div[2]/div[2]/div/div/div/div[1]/div[2]/div[1]/div[2]/text()").get()
         except Exception as exception:
             logging.info(exception)
             tender['description'] = ''
@@ -210,6 +353,11 @@ class ZakupkiSpider(scrapy.Spider):
         request.meta['tender'] = tender
         yield request
 
+        # tender['all_attached_files'] = None
+
+        # return tender
+
+    
 
     def parse_docs(self, response):
         """_summary_
@@ -228,10 +376,10 @@ class ZakupkiSpider(scrapy.Spider):
         "Извещение, изменение извещения о проведении",
         "Документация, изменение документации",
         "Документация по закупке",
-    ]:
+        ]:
             attachments_list = response.xpath('//div[@class="col-sm-12 blockInfo"]/h2[contains(text(), "{}")]/following-sibling::div[2]/div[@class="col-sm-6"]/div/*[contains(text(), "Прикрепленные файлы")]/following-sibling::div'.format(variation))
             
-            if attachments_list.attrib == {}:
+            if attachments_list.attrib == {} or attachments_list is None:
                 attachments_list = response.xpath('//div[@class="col-sm-12 blockInfo"]/h2[contains(text(), "{}")]/following-sibling::div[1]/div[@class="col-sm-6"]/div/*[contains(text(), "Прикрепленные файлы")]/following-sibling::div'.format(variation))
             
             if attachments_list:
@@ -247,20 +395,49 @@ class ZakupkiSpider(scrapy.Spider):
 
         # list containing all files, including files from rar- and zi-archives
         all_attached_files = []
+        tender_has_docs = self.check_tender_has_docs(tender['number'])
 
         for title, url in docs.items():
             resp = requests.get(url,  headers={'User-Agent': 'Custom'})
             if resp.status_code == 200:
                 # working with file's payload to save
-                attached_files = handle_bytes(resp, title, tender['number'])
-                all_attached_files.append(attached_files)
-                logging.warning(all_attached_files)
+                if tender_has_docs == 1:
+                    print('files not in database')
+                    attached_files = handle_bytes(resp, title, tender['number'])
+                    all_attached_files.append(attached_files)
+                    logging.warning(all_attached_files)
 
             else:
                 logging.warning(f"something went wrong on {url}")
 
         tender['all_attached_files'] = all_attached_files
                     
-        return tender
+        yield tender
 
 
+    def check_tender_has_docs(self, number):
+        try:
+            ## Connection Details
+            hostname = DATABASE_HOST
+            username = DATABASE_USER
+            password = DATABASE_PASSWORD 
+            database = DATABASE_NAME
+
+            ## Create/Connect to database
+            connection = psycopg2.connect(host=hostname, user=username, password=password, dbname=database)
+            
+            ## Create cursor, used to execute commands
+            cursor = connection.cursor()
+            cursor.execute("SELECT public.parser_script_tenderdocument.id \
+                            FROM public.parser_script_tenderdocument \
+                            JOIN public.parser_script_tender ON public.parser_script_tenderdocument.tender_id = public.parser_script_tender.id \
+                            where public.parser_script_tender.number = %s;", (number,))
+            existing_item = cursor.fetchone()
+            if existing_item:
+                return 0
+            else:
+                return 1
+
+        except Exception as e:
+            print('troubles from fetching docs')
+            raise Exception(e)

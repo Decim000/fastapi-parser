@@ -2,6 +2,9 @@ import io
 import os
 import logging
 import aspose.words as aw
+import subprocess
+
+from docx import Document
 
 from tenderchad_scraper.s3_service import UploadToS3
 from tenderchad_scraper.filesaver_service.rarsaver_service import RarArchivedFileSaverService
@@ -37,7 +40,8 @@ class FileSaver:
         """    
         logging.warning(f"{self.extension}")
 
-        if (self.extension != "doc") and (self.extension != "zip") and (self.extension != "rar"):
+        # if (self.extension != "doc") and (self.extension != "zip") and (self.extension != "rar"):
+        if (self.extension != "zip") and (self.extension != "rar"):
             # upload file in common format
             upload_service = UploadToS3(self.number, self.title, self.file)
             upload_service.upload_to_s3()
@@ -46,27 +50,32 @@ class FileSaver:
             self.accumulate_files(self.title)
 
         if self.extension == "doc":
-            # MAYBE use subprocess and libreoffice
+            # # extract .doc data
+            # data = io.BytesIO(self.file)
+            # document = Document(self.file)
+            pass
 
-            # extract .doc data
-            data = io.BytesIO(self.file)
-            document = aw.Document(data)
-
-            # make temp/number folder to store .docx
+            # # make temp/number folder to store .docx
             if not os.path.exists(self.temp_path):
                 os.makedirs(self.temp_path)
 
-            # rename .docx file and save to folder
+            # rename .doc file and save to folder
             self.title = rename_title(self.title)
-            docx_path = os.path.join(self.temp_path, f"{self.title}x")
-            document.save(docx_path, aw.SaveFormat.DOCX)
-            # fp = tempfile.NamedTemporaryFile(suffix=".doc")
-            # fp.write(self.file)
-            # fp.seek(0)
-            # temp_doc_path = fp.name
-            # subprocess.call(['lowriter', '--headless', '--convert-to', 'docx', temp_doc_path])
-            # fp.close()
+            doc_path = os.path.join(self.temp_path, f"{self.title}")
+            docx_path = f'{doc_path}x'
+            # document.save(docx_path)
+            f = open(doc_path, "wb")
+            f.write(self.file)
+            f.close()
 
+            # MAYBE use subprocess and libreoffice
+            doc_path = os.path.join(self.temp_path, f"{self.title}")
+            docx_dir = os.path.join(self.temp_path, f"{self.title}x")
+            process = subprocess.call(f"libreoffice --headless --convert-to docx {doc_path} --outdir {self.temp_path}", shell=True)
+
+            # process.wait()
+            
+            
             # upload .doc
             upload_service = UploadToS3(self.number, self.title, self.file)
             upload_service.upload_to_s3()
@@ -77,12 +86,14 @@ class FileSaver:
 
             # remove temp .docx file
             os.remove(docx_path)
+            
 
             # save filename to all filenames
             self.accumulate_files(self.title)
             self.accumulate_files(f"{self.title}x")
 
         if self.extension == "zip":
+
             # make temp/number folder
             if not os.path.exists(self.temp_path):
                 os.makedirs(self.temp_path)

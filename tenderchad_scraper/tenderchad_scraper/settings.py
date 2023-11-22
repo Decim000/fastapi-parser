@@ -1,3 +1,4 @@
+from environ import Env
 # Scrapy settings for tenderchad_scraper project
 #
 # For simplicity, this file contains only settings considered important or
@@ -67,6 +68,7 @@ ITEM_PIPELINES = {
     'tenderchad_scraper.pipelines.FullpageClearDataPipeline': 400,
     'tenderchad_scraper.pipelines.DocsClearDataPipeline': 500,
     # 'tenderchad_scraper.pipelines.SaveDocPipeline': 500,
+    'tenderchad_scraper.pipelines.PostgresPipeline': 1000,
 }
 
 # Enable and configure the AutoThrottle extension (disabled by default)
@@ -94,3 +96,17 @@ ITEM_PIPELINES = {
 REQUEST_FINGERPRINTER_IMPLEMENTATION = "2.7"
 TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"
 FEED_EXPORT_ENCODING = "utf-8"
+
+env = Env()
+Env.read_env()
+
+DATABASE_USER = env("DATABASE_USER")
+DATABASE_PASSWORD = env("DATABASE_PASSWORD")
+DATABASE_NAME = env("DATABASE_NAME")
+DATABASE_HOST = env("DATABASE_HOST")
+
+AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = env("AWS_SECRET_ACCESS_KEY")
+AWS_STORAGE_BUCKET_NAME = env("AWS_STORAGE_BUCKET_NAME")
+AWS_DOCS_FOLDER = env("AWS_DOCS_FOLDER")
+AWS_DOCS = env("AWS_DOCS")
