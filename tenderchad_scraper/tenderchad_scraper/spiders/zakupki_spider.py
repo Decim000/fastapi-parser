@@ -56,13 +56,13 @@ class ZakupkiSpider(scrapy.Spider):
                 
                 # get date of placing tender 
                 try:
-                    tender['date_placed'] = header.xpath("//div[contains(text(), 'Размещено')]/following-sibling::div[1]/text()").get()
+                    tender['date_placed'] = header.xpath("//div[contains(text(), 'Размещено')]/following-sibling::div[1]/text()").getall()[i]
                 except Exception:
                     tender['date_placed'] = None
                 
                 # get date when tender will be expired
                 try:
-                    tender['date_end'] = header.xpath("//div[contains(text(), 'Окончание подачи заявок')]/following-sibling::div[1]/text()").get()
+                    tender['date_end'] = header.xpath("//div[contains(text(), 'Окончание подачи заявок')]/following-sibling::div[1]/text()").getall()[i]
                 except Exception:
                     tender['date_end'] = None
                 
