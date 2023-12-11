@@ -290,6 +290,7 @@ class PostgresPipeline:
 class SaveStagePipeline:
 
     def __init__(self):
+        
         self.connection = PostgresConnection()._instance.connection
         
         ## Create cursor, used to execute commands
@@ -298,7 +299,6 @@ class SaveStagePipeline:
     def close_spider(self, spider):
         
         self.cursor.close()
-        self.connection.close()
 
     def process_item(self, item, spider):
         try:
