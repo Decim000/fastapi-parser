@@ -40,8 +40,8 @@ class FileSaver:
         """    
         logging.warning(f"{self.extension}")
 
-        # if (self.extension != "doc") and (self.extension != "zip") and (self.extension != "rar"):
-        if (self.extension != "zip") and (self.extension != "rar"):
+        if (self.extension != "doc") and (self.extension != "zip") and (self.extension != "rar"):
+        # if (self.extension != "zip") and (self.extension != "rar"):
             # upload file in common format
             upload_service = UploadToS3(self.number, self.title, self.file)
             upload_service.upload_to_s3()
@@ -50,32 +50,23 @@ class FileSaver:
             self.accumulate_files(self.title)
 
         if self.extension == "doc":
-            # # extract .doc data
-            # data = io.BytesIO(self.file)
-            # document = Document(self.file)
-            pass
-
+            
             # # make temp/number folder to store .docx
             if not os.path.exists(self.temp_path):
                 os.makedirs(self.temp_path)
 
             # rename .doc file and save to folder
-            self.title = rename_title(self.title)
             doc_path = os.path.join(self.temp_path, f"{self.title}")
             docx_path = f'{doc_path}x'
-            # document.save(docx_path)
             f = open(doc_path, "wb")
             f.write(self.file)
             f.close()
 
             # MAYBE use subprocess and libreoffice
             doc_path = os.path.join(self.temp_path, f"{self.title}")
-            docx_dir = os.path.join(self.temp_path, f"{self.title}x")
-            process = subprocess.call(f"libreoffice --headless --convert-to docx {doc_path} --outdir {self.temp_path}", shell=True)
+            docx_path = os.path.join(self.temp_path, f"{self.title}x")
+            process = subprocess.call(f"libreoffice --headless --convert-to docx '{doc_path}' --outdir {self.temp_path}", shell=True)
 
-            # process.wait()
-            
-            
             # upload .doc
             upload_service = UploadToS3(self.number, self.title, self.file)
             upload_service.upload_to_s3()
@@ -84,8 +75,8 @@ class FileSaver:
             upload_service_docx = UploadToS3(self.number, f"{self.title}x", None)
             upload_service_docx.upload_to_s3_from_disk()
 
-            # remove temp .docx file
-            os.remove(docx_path)
+            # # remove temp .docx file
+            # os.remove(docx_path)
             
 
             # save filename to all filenames

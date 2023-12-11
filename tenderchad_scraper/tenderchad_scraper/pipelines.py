@@ -17,7 +17,8 @@ from sqlalchemy.orm import sessionmaker
 from scrapy.exceptions import DropItem
 from scrapy import signals
 
-from tenderchad_scraper.settings import DATABASE_NAME, DATABASE_PASSWORD, DATABASE_USER, DATABASE_HOST, AWS_DOCS_FOLDER, AWS_DOCS 
+from tenderchad_scraper.settings import DATABASE_NAME, DATABASE_PASSWORD, DATABASE_USER, DATABASE_HOST, AWS_DOCS_FOLDER, AWS_DOCS
+from tenderchad_scraper.database import PostgresConnection 
 
 
 class TenderchadScraperPipeline:
@@ -199,14 +200,8 @@ class DocsClearDataPipeline:
 class PostgresPipeline:
 
     def __init__(self):
-        ## Connection Details
-        hostname = DATABASE_HOST
-        username = DATABASE_USER
-        password = DATABASE_PASSWORD 
-        database = DATABASE_NAME
-
-        ## Create/Connect to database
-        self.connection = psycopg2.connect(host=hostname, user=username, password=password, dbname=database)
+        
+        self.connection = PostgresConnection()._instance.connection
         
         ## Create cursor, used to execute commands
         self.cursor = self.connection.cursor()
@@ -214,7 +209,6 @@ class PostgresPipeline:
     def close_spider(self, spider):
         
         self.cursor.close()
-        self.connection.close()
 
     def process_item(self, item, spider):
         try:
@@ -254,18 +248,12 @@ class PostgresPipeline:
                     supplier_id = id
                     break
 
-            # self.cursor.execute("SELECT id FROM parser_script_supplierdefinition WHERE supplier_definition_name = %s", (item["supplier"],))
-            # supplier_id = self.cursor.fetchone()
             logging.warning(f'supplier: {item["supplier"]}')
             logging.warning(f'supplier_extended: {item["supplier_extended"]}')
             logging.warning(f'supplier_id: {supplier_id}')
 
             if existing_item:
                 logging.warning('in database')
-                # item_id = existing_item[0]
-                # # If item exists, update it
-                # update_query = 'UPDATE parser_script_tender SET price = %s, name = %s, customer_name = %s, platform_name = %s, "platform_URL" = %s, placement_date = %s, end_date = %s, federal_law_id = %s, purchase_stage_id = %s, supplier_definition_id = %s, supplier_definition_extended = %s, percentage_application_security = %s, deadline = %s WHERE number = %s'
-                # self.cursor.execute(update_query, (item["price"], item["description"], item["customer"], item["platform"], item["platform_url"], item["date_placed"], item["date_end"], law_id, stage_id, supplier_id, item['supplier_extended'], item['contract_enforcement'], item['deadline'], item["number"]))
             else:
                 logging.warning('insert triggered')
                 # If item doesn't exist, insert it
@@ -273,24 +261,22 @@ class PostgresPipeline:
                 self.cursor.execute(insert_query, (item["number"], item["description"], item["customer"], item["platform"], item["platform_url"], item["price"], item['date_placed'], item['date_end'], law_id, stage_id, supplier_id, item['supplier_extended'] or "", item['contract_enforcement'], item['deadline']))
                 item_id = self.cursor.fetchone()[0]
 
-            try:
-                for title in item['all_attached_files']:
+                try:
+                    for title in item['all_attached_files']:
 
-                    tender_document_query = "SELECT id FROM parser_script_tenderdocument WHERE title = %s AND tender_id = %s" 
-                    self.cursor.execute(tender_document_query, (title, item_id))
-                    tender_document_id = self.cursor.fetchone()
+                        tender_document_query = "SELECT id FROM parser_script_tenderdocument WHERE title = %s AND tender_id = %s"
+                        self.cursor.execute(tender_document_query, (title, item_id))
+                        tender_document_id = self.cursor.fetchone()
 
-                    if not tender_document_id:
-                        insert_tender_document_query = "INSERT INTO parser_script_tenderdocument (title, document, tender_id) VALUES (%s, %s, %s)" 
-                        document_path = AWS_DOCS + item['number'] + '/' + title
-                        self.cursor.execute(insert_tender_document_query, (title, document_path, item_id))
-
-            
-            except Exception as e:
-                raise Exception(f'Exception in saving files: {e}')
-
-            
-            self.connection.commit()
+                        if not tender_document_id:
+                            insert_tender_document_query = "INSERT INTO parser_script_tenderdocument (title, document, tender_id) VALUES (%s, %s, %s)" 
+                            document_path = AWS_DOCS + item['number'] + '/' + title
+                            self.cursor.execute(insert_tender_document_query, (title, document_path, item_id))
+ 
+                except Exception as e:
+                    raise Exception(f'Exception in saving files: {e}')
+                
+                self.connection.commit()
             
 
         except Exception as e:
@@ -304,14 +290,7 @@ class PostgresPipeline:
 class SaveStagePipeline:
 
     def __init__(self):
-        ## Connection Details
-        hostname = DATABASE_HOST
-        username = DATABASE_USER
-        password = DATABASE_PASSWORD 
-        database = DATABASE_NAME
-
-        ## Create/Connect to database
-        self.connection = psycopg2.connect(host=hostname, user=username, password=password, dbname=database)
+        self.connection = PostgresConnection()._instance.connection
         
         ## Create cursor, used to execute commands
         self.cursor = self.connection.cursor()

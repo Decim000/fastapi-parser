@@ -7,6 +7,7 @@ import psycopg2
 from scrapy.crawler import CrawlerProcess
 from scrapy.utils.project import get_project_settings
 from twisted.internet import asyncioreactor
+from tenderchad_scraper.database import PostgresConnection
 
 from utils import generate_url
 from tenderchad_scraper.settings import DATABASE_NAME, DATABASE_PASSWORD, DATABASE_USER, DATABASE_HOST, AWS_DOCS_FOLDER, AWS_DOCS 
@@ -29,7 +30,7 @@ async def run_scraping(search: Union[str, None] = None, federalLaw: Annotated[Un
     spider_name = 'ZakupkiSpider'
     params = {"search": search, "federalLaw": federalLaw, "purchaseStage": purchaseStage, "minDate": minDate, "maxDate": maxDate, "minPrice": minPrice, "maxPrice": maxPrice}
     print(params)
-    dynamic_value = generate_url(params)
+    dynamic_value = generate_url(params, use_it_okpd=False)
     print(dynamic_value)
     scraping_process = Process(target=scrape, args=(spider_name,  dynamic_value))
     scraping_process.start()
@@ -41,15 +42,8 @@ if __name__ == "__main__":
 
 @app.get("/update-tender")
 async def update():
-    ## Connection Details
-    hostname = DATABASE_HOST
-    username = DATABASE_USER
-    password = DATABASE_PASSWORD 
-    database = DATABASE_NAME
-
-    ## Create/Connect to database
-    connection = psycopg2.connect(host=hostname, user=username, password=password, dbname=database)
-    
+    connection = PostgresConnection()._instance.connection
+        
     ## Create cursor, used to execute commands
     cursor = connection.cursor()
     query = """SELECT public.parser_script_tender.number, public.parser_script_tender.federal_law_id, public.parser_script_federallaw.name, public.parser_script_tender.purchase_stage_id

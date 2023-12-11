@@ -11,6 +11,8 @@ from .filesaver_service.saver_utils import clear_tender_number
 
 client = boto3.client(
         "s3",
+        "pl-waw",
+        endpoint_url='https://tenderchad.s3.pl-waw.scw.cloud',
         aws_access_key_id=AWS_ACCESS_KEY_ID,
         aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
     )
@@ -21,14 +23,16 @@ class UploadToS3:
         self.number = number
         self.title = title
         self.file = bytes
+        self.acl = "public-read"
 
     def upload_to_s3(self):
         try:
             number_folder = clear_tender_number(self.number)
             full_path = f"{AWS_DOCS_FOLDER}{number_folder}/{self.title}"
-            self.client.put_object(Body=self.file, Bucket=AWS_STORAGE_BUCKET_NAME, Key=full_path)
+            self.client.put_object(Body=self.file, Bucket=AWS_STORAGE_BUCKET_NAME, Key=full_path, ACL=self.acl)
             
-        except:
+        except Exception as e:
+            logging.error(e)
             logging.error("Error while uploading to S3")
 
     def upload_to_s3_from_disk(self):

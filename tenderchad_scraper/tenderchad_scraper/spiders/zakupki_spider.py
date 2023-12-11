@@ -2,16 +2,11 @@ import requests
 import scrapy
 import logging
 import re
-import psycopg2
-
-from scrapy.crawler import CrawlerProcess
-from scrapy.utils.project import get_project_settings
 
 from tenderchad_scraper.items import TenderItem
+from tenderchad_scraper.database import PostgresConnection
 from tenderchad_scraper.utils import handle_bytes
 from tenderchad_scraper.title_util import rename_title
-from utils import generate_url
-from tenderchad_scraper.settings import DATABASE_NAME, DATABASE_PASSWORD, DATABASE_USER, DATABASE_HOST, AWS_DOCS_FOLDER, AWS_DOCS 
 
 
 class ZakupkiSpider(scrapy.Spider):
@@ -24,11 +19,6 @@ class ZakupkiSpider(scrapy.Spider):
                             'tenderchad_scraper.pipelines.PostgresPipeline': 1000,
                             },
                         }
-
-    # def __init__(self, *args, **kwargs): 
-    #   super(ZakupkiSpider, self).__init__(*args, **kwargs) 
-
-    #   self.start_urls = [kwargs.get('start_url')] 
 
     def parse(self, response):
         """ Entrypoint for starting parsing with this spider.
@@ -49,8 +39,6 @@ class ZakupkiSpider(scrapy.Spider):
 
         if headers:
             for i, header in enumerate(headers):
-                # get Tender item to store info
-                # tender = TenderItem()
 
                 # get tender number
                 tender = {}
@@ -252,10 +240,9 @@ class ZakupkiSpider(scrapy.Spider):
 
         Yields:
             scrapy.Request: Request to function for downloading docs
-        """        
+        """
 
         # retrieve TenderInfo object to continue storing data
-        # tender = response.meta.get('tender')
         tender_dict = response.meta.get('tender')
 
         tender = TenderItem()
@@ -357,14 +344,13 @@ class ZakupkiSpider(scrapy.Spider):
 
         # return tender
 
-    
 
     def parse_docs(self, response):
         """_summary_
 
         Args:
             response (_type_): _description_
-        """        
+        """
         tender = response.meta.get('tender')
 
         # dict for storing documents {'doc_name': url}
@@ -381,51 +367,67 @@ class ZakupkiSpider(scrapy.Spider):
             
             if attachments_list.attrib == {} or attachments_list is None:
                 attachments_list = response.xpath('//div[@class="col-sm-12 blockInfo"]/h2[contains(text(), "{}")]/following-sibling::div[1]/div[@class="col-sm-6"]/div/*[contains(text(), "Прикрепленные файлы")]/following-sibling::div'.format(variation))
+                if attachments_list.attrib == {} or attachments_list is None:
+                    attachments_list = response.xpath('//div[contains(text(), "{}")]/following-sibling::div[1]/div/div[2]/*/*/*[contains(text(), "Прикрепленные файлы")]/following-sibling::div/div'.format(variation))
             
             if attachments_list:
+                logging.warning('files found')
+                logging.warning(attachments_list)
                # get titles and links
                 for attachment in attachments_list:
-                    link = attachment.xpath('.//div/span/a/@href').get()
-                    title = attachment.xpath('.//div/span/a/@title').get()
-                    title = rename_title(title)
-                    docs.update({title: link})
-                    tender['docs'] = docs
+                    try:
+                        link = attachment.xpath('.//span[2]/a[2]/@href').get()
+                        url = "https://zakupki.gov.ru" + link
+                        title = attachment.xpath('.//span[2]/a[2]/text()').get()
+                        title = title.replace("\r\n","")
+                        title = title.strip()
+                        logging.warning(title)
+                        docs.update({title: url})
+                        tender['docs'] = docs
+                    except:
+                        link = attachment.xpath('.//div/span/a/@href').get()
+                        logging.warning(link)
+                        title = attachment.xpath('.//div/span/a/@title').get()
+                        title = title.replace("\r\n","")
+                        title = title.strip()
+                        logging.warning(title)
+                        docs.update({title: link})
+                        tender['docs'] = docs
 
                 break
 
+        if attachments_list.attrib == {} or attachments_list is None:
+            logging.warning('files not found')      
+
         # list containing all files, including files from rar- and zi-archives
         all_attached_files = []
-        tender_has_docs = self.check_tender_has_docs(tender['number'])
+        tender_has_docs = self.check_tender_has_docs_in_db(tender['number'])
 
-        for title, url in docs.items():
-            resp = requests.get(url,  headers={'User-Agent': 'Custom'})
-            if resp.status_code == 200:
-                # working with file's payload to save
-                if tender_has_docs == 1:
-                    print('files not in database')
+        if not tender_has_docs:
+            for title, url in docs.items():
+                resp = requests.get(url,  headers={'User-Agent': 'Custom'})
+                if resp.status_code == 200:
+                    # working with file's payload to save
+                    logging.warning('start downloading files')
                     attached_files = handle_bytes(resp, title, tender['number'])
                     all_attached_files.append(attached_files)
                     logging.warning(all_attached_files)
+                    
+                else:
+                    logging.warning(f"something went wrong on {url}")
+        else:
+            logging.warning(f"files for tender {tender['number']} are in database")
 
-            else:
-                logging.warning(f"something went wrong on {url}")
 
         tender['all_attached_files'] = all_attached_files
                     
         yield tender
 
 
-    def check_tender_has_docs(self, number):
+    def check_tender_has_docs_in_db(self, number):
         try:
-            ## Connection Details
-            hostname = DATABASE_HOST
-            username = DATABASE_USER
-            password = DATABASE_PASSWORD 
-            database = DATABASE_NAME
-
-            ## Create/Connect to database
-            connection = psycopg2.connect(host=hostname, user=username, password=password, dbname=database)
-            
+            connection = PostgresConnection()._instance.connection
+        
             ## Create cursor, used to execute commands
             cursor = connection.cursor()
             cursor.execute("SELECT public.parser_script_tenderdocument.id \
@@ -434,10 +436,11 @@ class ZakupkiSpider(scrapy.Spider):
                             where public.parser_script_tender.number = %s;", (number,))
             existing_item = cursor.fetchone()
             if existing_item:
-                return 0
+                logging.warning(f'Tender {number} has docs in database')
+                return True
             else:
-                return 1
+                return False
 
         except Exception as e:
-            print('troubles from fetching docs')
+            print(f'troubles from fetching docs for tender {number}')
             raise Exception(e)

@@ -63,8 +63,6 @@ class RarArchivedFileSaverService:
         __item_info = self.rar_obj.getinfo(filename)
         __name = __item_info.filename
         __correct_filename = rename_title(__name)
-        # with open(f"temp/{__correct_filename}", "wb") as binary_file:
-        #         binary_file.write(__bytes)
         upload_service = UploadToS3(self.number, __correct_filename, __bytes)
         upload_service.upload_to_s3()
 

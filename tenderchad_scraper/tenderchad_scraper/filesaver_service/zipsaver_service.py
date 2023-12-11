@@ -38,17 +38,22 @@ class ZipArchivedFileSaverService:
             self.zip_obj = ZipFile(self.path)
  
             with self.zip_obj:
-                print(self.zip_obj.namelist())
+                print(self.zip_obj.infolist())
 
-                for filename in self.zip_obj.namelist():
-                    print(filename.encode('cp437').decode(self.archive_encoding))
+                for zipinfo_item in self.zip_obj.infolist():
+                    try:
+                        need_encoding = True
+                        print(zipinfo_item.filename.encode('cp437').decode(self.archive_encoding))
+                    except Exception:
+                        need_encoding = False
+                        print(zipinfo_item.filename)
 
-                    if filename.endswith("/"):
+                    if not zipinfo_item.compress_type:
                         continue
-                    if filename.endswith(".doc"):
-                        self.__save_doc_file(filename=filename)
+                    if zipinfo_item.filename.endswith(".doc"):
+                        self.__save_doc_file(filename=zipinfo_item.filename)                    
                     else:
-                        self.__save_common_file(filename=filename)
+                        self.__save_common_file(filename=zipinfo_item.filename, need_encoding=need_encoding)
 
             self.zip_obj.close()
             # os.remove(self.path)
@@ -58,7 +63,7 @@ class ZipArchivedFileSaverService:
             print(e)
             # os.remove(self.path)
 
-    def __save_common_file(self, filename: str):
+    def __save_common_file(self, filename: str, need_encoding=True):
         """Function for saving file to S3 with extension that doesn't need to be converted.
 
         Args:
@@ -67,10 +72,10 @@ class ZipArchivedFileSaverService:
         __bytes = self.zip_obj.read(filename)
         __item_info = self.zip_obj.getinfo(filename)
         __name = __item_info.filename
-        __name = __name.encode('cp437').decode(self.archive_encoding)
+        if need_encoding:
+            __name = __name.encode('cp437').decode(self.archive_encoding)
         __correct_filename = rename_title(__name)
-        # with open(f"temp/{__correct_filename}", "wb") as binary_file:
-        #         binary_file.write(__bytes)
+
         upload_service = UploadToS3(self.number, __correct_filename, __bytes)
         upload_service.upload_to_s3()
 

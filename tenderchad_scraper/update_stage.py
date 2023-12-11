@@ -1,23 +1,16 @@
 import asyncio
-import psycopg2
 
 from twisted.internet.task import LoopingCall
 from twisted.internet import reactor
 from scrapy.utils.log import configure_logging
 from scrapy.crawler import CrawlerRunner
 from tenderchad_scraper.spiders.update_tender_spider import UpdateSpider
+from tenderchad_scraper.database import PostgresConnection
 
 from utils import generate_url
-from tenderchad_scraper.settings import DATABASE_NAME, DATABASE_PASSWORD, DATABASE_USER, DATABASE_HOST, AWS_DOCS_FOLDER, AWS_DOCS 
 
-hostname = DATABASE_HOST
-username = DATABASE_USER
-password = DATABASE_PASSWORD 
-database = DATABASE_NAME
-
-## Create/Connect to database
-connection = psycopg2.connect(host=hostname, user=username, password=password, dbname=database)
-
+connection = PostgresConnection()._instance.connection
+        
 ## Create cursor, used to execute commands
 cursor = connection.cursor()
 query = """SELECT public.parser_script_tender.number, public.parser_script_tender.federal_law_id, public.parser_script_federallaw.name, public.parser_script_tender.purchase_stage_id,public.parser_script_tender.placement_date
