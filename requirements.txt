@@ -65,7 +65,7 @@ websockets==11.0.3
 # sqlalchemy==2.0.21 # Installed as dependency for sqlalchemy-utils
 # starlette==0.27.0 # Installed as dependency for fastapi
 # tldextract==3.4.4 # Installed as dependency for scrapy
-# twisted==22.10.0 # Installed as dependency for scrapy
+twisted==22.10.0 # Installed as dependency for scrapy
 # typing-extensions==4.7.1 # Installed as dependency for fastapi, pydantic, pydantic-core, sqlalchemy, twisted
 # tzlocal==5.2 # Installed as dependency for apscheduler
 # urllib3==1.26.16 # Installed as dependency for botocore, requests

@@ -60,7 +60,17 @@ class HeaderClearDataPipeline:
 
         # if tender was placed two months ago and still on submission
         if (item['date_placed'] is not None) and (item['stage'] is not None):
-            if (datetime.strptime(item['date_placed'], "%d.%m.%Y") < (datetime.now() - timedelta(days=60))) and (item['stage'] == 'Подача заявок' or 'Работа комиссии'):
+            try:
+                dt = datetime.strptime(item['date_placed'], "%d.%m.%Y")
+            except Exception:
+                try:
+                    dt = datetime.strptime(item['date_placed'], "%d.%m.%Y %H:%M:%S")
+                except Exception:
+                    dt = None
+
+            dt_60_day_past = datetime.now() - timedelta(days=60)
+
+            if (dt < dt_60_day_past):
                 item['stage'] = 'Закупка отменена'
             
         return item

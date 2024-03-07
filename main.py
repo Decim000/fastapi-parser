@@ -25,8 +25,23 @@ def scrape(spider_name, dynamic_value):
     return {"status": "Scraping initiated"}
 
 
+def scrape_simple(spider_name):
+    process = CrawlerProcess(get_project_settings())
+
+    process.crawl(spider_name)
+    process.start()
+
+    return {"status": "Scraping initiated"}
+
+
 @app.get("/scrape")
-async def run_scraping(search: Union[str, None] = None, federalLaw: Annotated[Union[str, list[str], None], Query()] = None, purchaseStage: Annotated[Union[str, list[str], None], Query()] = None, minDate: Union[str, None] = None, maxDate: Union[str, None] = None, minPrice: Union[str, None] = None, maxPrice: Union[str, None] = None):
+async def run_scraping(search: Union[str, None] = None,
+                       federalLaw: Annotated[Union[str, list[str], None], Query()] = None,
+                       purchaseStage: Annotated[Union[str, list[str], None], Query()] = None,
+                       minDate: Union[str, None] = None,
+                       maxDate: Union[str, None] = None,
+                       minPrice: Union[str, None] = None,
+                       maxPrice: Union[str, None] = None):
     spider_name = 'ZakupkiSpider'
     params = {"search": search, "federalLaw": federalLaw, "purchaseStage": purchaseStage, "minDate": minDate, "maxDate": maxDate, "minPrice": minPrice, "maxPrice": maxPrice}
     print(params)
@@ -34,6 +49,14 @@ async def run_scraping(search: Union[str, None] = None, federalLaw: Annotated[Un
     print(dynamic_value)
     scraping_process = Process(target=scrape, args=(spider_name,  dynamic_value))
     scraping_process.start()
+
+
+@app.get("/scrape_etp_ets")
+async def run_scraping():
+    spider_name = 'EtpEtsSpider'
+    scraping_process = Process(target=scrape_simple, args=(spider_name, ))
+    scraping_process.start()
+
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
